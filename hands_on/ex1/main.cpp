@@ -1,12 +1,22 @@
+/*
+ * Display Device Information
+ *
+ * Script to print out some information about the OpenCL devices
+ * and platforms available on your system
+ *
+ * History: C++ version written by Tom Deakin, 2012
+ *          Updated by Tom Deakin, August 2013
+*/
+
 #define CL_HPP_ENABLE_EXCEPTIONS
 #define CL_HPP_MINIMUM_OPENCL_VERSION 120
 #define CL_HPP_TARGET_OPENCL_VERSION 120
 
-#include "common/cl.hpp"
+#include "../../common/cpp/cl.hpp"
 #include <iostream>
 #include <vector>
 
-#include "common/err_code.h"
+#include "../../common/err_code.h"
 
 int main() {
 
@@ -28,6 +38,9 @@ int main() {
 
             platform.getInfo(CL_PLATFORM_VERSION, &s);
             std::cout << "\tVersion: " << s << std::endl;
+
+            platform.getInfo(CL_PLATFORM_EXTENSIONS, &s);
+            std::cout << "\tExtensions: " << s << std::endl;
 
             // Discover number of devices
             std::vector<cl::Device> devices;
