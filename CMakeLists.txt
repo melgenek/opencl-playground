@@ -11,8 +11,14 @@ target_link_libraries(hands_on_ex1_c OpenCL::OpenCL)
 add_executable(hands_on_ex1 hands_on/ex1/main.cpp common/cpp/cl.hpp common/err_code.h)
 target_link_libraries(hands_on_ex1 OpenCL::OpenCL)
 
-add_executable(hands_on_ex2_c hands_on/ex2_3/main.c common/err_code.h common/c/wtime.c common/c/device_info.c)
-target_link_libraries(hands_on_ex2_c OpenCL::OpenCL)
+add_executable(hands_on_ex2_3_c hands_on/ex2_3/main.c common/err_code.h common/c/wtime.c common/c/device_info.c)
+target_link_libraries(hands_on_ex2_3_c OpenCL::OpenCL)
 
-add_executable(hands_on_ex2 hands_on/ex2_3/main.cpp common/cpp/cl.hpp common/err_code.h common/cpp/util.hpp)
-target_link_libraries(hands_on_ex2 OpenCL::OpenCL)
+add_executable(hands_on_ex2_3 hands_on/ex2_3/main.cpp common/cpp/cl.hpp common/err_code.h common/cpp/util.hpp)
+target_link_libraries(hands_on_ex2_3 OpenCL::OpenCL)
+
+add_executable(hands_on_ex4_c hands_on/ex4/main.c common/err_code.h common/c/wtime.c common/c/device_info.c)
+target_link_libraries(hands_on_ex4_c OpenCL::OpenCL)
+
+add_executable(hands_on_ex4 hands_on/ex4/main.cpp common/cpp/cl.hpp common/err_code.h common/cpp/util.hpp)
+target_link_libraries(hands_on_ex4 OpenCL::OpenCL)
