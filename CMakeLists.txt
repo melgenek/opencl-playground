@@ -22,3 +22,9 @@ target_link_libraries(hands_on_ex4_c OpenCL::OpenCL)
 
 add_executable(hands_on_ex4 hands_on/ex4/main.cpp common/cpp/cl.hpp common/err_code.h common/cpp/util.hpp)
 target_link_libraries(hands_on_ex4 OpenCL::OpenCL)
+
+add_executable(hands_on_ex5_c hands_on/ex5/main.c common/err_code.h common/c/wtime.c common/c/device_info.c)
+target_link_libraries(hands_on_ex5_c OpenCL::OpenCL)
+
+add_executable(hands_on_ex5 hands_on/ex5/main.cpp common/cpp/cl.hpp common/err_code.h common/cpp/util.hpp)
+target_link_libraries(hands_on_ex5 OpenCL::OpenCL)
