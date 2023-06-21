@@ -38,10 +38,9 @@
 
 const size_t N = 1024;        // A[N][N], B[N][N], C[N][N]
 const size_t size = N * N;    // Number of elements in each matrix
-const size_t COUNT = 1;       // number of times to do each multiplication
 
 // Exercise 6. Simple
-const std::string SIMPLE_MUL = R"(
+const std::string CELL_PER_WORK_ITEM = R"(
 __kernel void mmul(
    const int N,
    __global float* A,
@@ -60,6 +59,51 @@ __kernel void mmul(
     }
 })";
 
+// Exercise 7. Row per work item
+const std::string ROW_PER_WORK_ITEM = R"(
+__kernel void mmul(
+   const int N,
+   __global float* A,
+   __global float* B,
+   __global float* C) {
+    int i = get_global_id(0);
+
+    if (i < N) {
+        for (int j = 0; j < N; j++) {
+            float tmp = 0.0f;
+            for (int k = 0; k < N; k++) {
+                tmp += A[i * N + k] * B[k * N + j];
+            }
+            C[i * N + j] = tmp;
+        }
+    }
+})";
+
+// Exercise 7. Row per work item with private memory
+const std::string ROW_PER_WORK_ITEM_PRIVATE_ROW = R"(
+__kernel void mmul(
+   const int N,
+   __global float* A,
+   __global float* B,
+   __global float* C) {
+    int i = get_global_id(0);
+
+    if (i < N) {
+        // float row[N]; // this doesn't compile on Intel UHD Graphics GPU
+        float row[1024];
+        for (int k = 0; k < N; k++) {
+            row[k] = A[i * N + k];
+        }
+
+        for (int j = 0; j < N; j++) {
+            float tmp = 0.0f;
+            for (int k = 0; k < N; k++) {
+                tmp += row[k] * B[k * N + j];
+            }
+            C[i * N + j] = tmp;
+        }
+    }
+})";
 
 class ClContext {
 public:
@@ -80,38 +124,41 @@ private:
 };
 
 void multiplyCpuSimple(std::vector<float> &h_A, std::vector<float> &h_B, std::vector<float> &h_C) {
-    printf("\n===== Sequential, matrix mul (dot prod), order %zu on host CPU ======\n", N);
-    for (int i = 0; i < COUNT; i++) {
-        zero_mat(N, h_C);
-        util::Timer timer;
-        double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
+    printf("Sequential, matrix mul (dot prod), order %zu on host CPU,\t", N);
+    zero_mat(N, h_C);
+    util::Timer timer;
+    double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
 
-        seq_mat_mul_sdot(N, h_A, h_B, h_C);
+    seq_mat_mul_sdot(N, h_A, h_B, h_C);
 
-        double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
-        results(N, h_C, run_time);
-    }
+    double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+    results(N, h_C, run_time);
+    printf("\n");
 }
 
 void multiplyCpuBetterSimple(std::vector<float> &h_A, std::vector<float> &h_B, std::vector<float> &h_C) {
-    printf("\n===== Better sequential, matrix mul (dot prod), order %zu on host CPU ======\n", N);
-    for (int i = 0; i < COUNT; i++) {
-        zero_mat(N, h_C);
-        util::Timer timer;
-        double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
+    printf("Better sequential, matrix mul (dot prod), order %zu on host CPU,\t", N);
+    zero_mat(N, h_C);
+    util::Timer timer;
+    double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
 
-        better_seq_mat_mul_sdot(N, h_A, h_B, h_C);
+    better_seq_mat_mul_sdot(N, h_A, h_B, h_C);
 
-        double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
-        results(N, h_C, run_time);
-    }
+    double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+    results(N, h_C, run_time);
+    printf("\n");
 }
 
-void multiplyCL(const std::string &name, const std::string &kernelCode, const ClContext &clContext,
-                std::vector<float> &h_A,
-                std::vector<float> &h_B,
-                std::vector<float> &h_C) {
-    printf("\n===== OpenCL, matrix mul '%s' on device '%s', order %zu ======\n", name.c_str(), clContext.getName(), N);
+void rowPerWorkItemMultiplyCL(const ClContext &clContext,
+                              const std::string &name,
+                              const std::string &kernelCode,
+                              const std::function<cl::EnqueueArgs(cl::CommandQueue &)> &createArgs,
+                              std::vector<float> &h_A,
+                              std::vector<float> &h_B,
+                              std::vector<float> &h_C) {
+    printf("OpenCL, matrix mul '%s', order %zu,\t",
+           name.c_str(),
+           N);
 
     auto queue = clContext.createQueue();
     auto &context = clContext.getContext();
@@ -124,23 +171,49 @@ void multiplyCL(const std::string &name, const std::string &kernelCode, const Cl
 
     auto naive_mmul = cl::KernelFunctor<int, cl::Buffer &, cl::Buffer &, cl::Buffer &>(program, "mmul");
 
-    for (int i = 0; i < COUNT; i++) {
-        zero_mat(N, h_C);
-        util::Timer timer;
-        double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
+    zero_mat(N, h_C);
+    util::Timer timer;
+    double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
 
-        cl::NDRange global(N, N);
-        naive_mmul(cl::EnqueueArgs(queue, global),
-                   N, d_a, d_b, d_c);
+    naive_mmul(createArgs(queue), N, d_a, d_b, d_c);
 
-        queue.finish();
+    queue.finish();
 
-        double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+    double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
 
-        cl::copy(queue, d_c, h_C.begin(), h_C.end());
+    cl::copy(queue, d_c, h_C.begin(), h_C.end());
 
-        results(N, h_C, run_time);
+    results(N, h_C, run_time);
+}
+
+void runForDevice(size_t deviceIndex,
+                  std::vector<float> &h_A,
+                  std::vector<float> &h_B,
+                  std::vector<float> &h_C) {
+    const ClContext clContext(deviceIndex);
+
+    printf("===== Device '%s' start =====\n", clContext.getName());
+    rowPerWorkItemMultiplyCL(clContext, "C(i,j) per work item", CELL_PER_WORK_ITEM, [](auto queue) {
+        return cl::EnqueueArgs(queue, cl::NDRange(N, N));
+    }, h_A, h_B, h_C);
+    rowPerWorkItemMultiplyCL(clContext, "C row per work item, 16 unites", ROW_PER_WORK_ITEM, [](auto queue) {
+        return cl::EnqueueArgs(queue, cl::NDRange(N), cl::NDRange(N / 16));
+    }, h_A, h_B, h_C);
+    rowPerWorkItemMultiplyCL(clContext, "C row per work item, any units", ROW_PER_WORK_ITEM, [](auto queue) {
+        return cl::EnqueueArgs(queue, cl::NDRange(N));
+    }, h_A, h_B, h_C);
+    if (deviceIndex != 0) { // Intel CPU gives CL_INVALID_WORK_GROUP_SIZE
+        rowPerWorkItemMultiplyCL(clContext, "C row per work item private memory, 16 units",
+                                 ROW_PER_WORK_ITEM_PRIVATE_ROW,
+                                 [](auto queue) {
+                                     return cl::EnqueueArgs(queue, cl::NDRange(N), cl::NDRange(N / 16));
+                                 }, h_A, h_B, h_C);
     }
+    rowPerWorkItemMultiplyCL(clContext, "C row per work item private memory, any units", ROW_PER_WORK_ITEM_PRIVATE_ROW,
+                             [](auto queue) {
+                                 return cl::EnqueueArgs(queue, cl::NDRange(N));
+                             }, h_A, h_B, h_C);
+    printf("===== Device '%s' done =====\n\n", clContext.getName());
 }
 
 int main() {
@@ -149,18 +222,13 @@ int main() {
     std::vector<float> h_C(size);
     initmat(N, h_A, h_B, h_C);
 
-//    multiplyCpuSimple(h_A, h_B, h_C);
+    multiplyCpuSimple(h_A, h_B, h_C);
     multiplyCpuBetterSimple(h_A, h_B, h_C);
 
     try {
-        const ClContext contextCpu(0);
-        multiplyCL("simple", SIMPLE_MUL, contextCpu, h_A, h_B, h_C);
-
-        const ClContext contextIntelGpu(1);
-        multiplyCL("simple", SIMPLE_MUL, contextIntelGpu, h_A, h_B, h_C);
-
-        const ClContext contextAmdGpu(2);
-        multiplyCL("simple", SIMPLE_MUL, contextAmdGpu, h_A, h_B, h_C);
+        for (int i = 0; i <= 2; i++) {
+            runForDevice(i, h_A, h_B, h_C);
+        }
     } catch (cl::Error &err) {
         std::cout << "Exception\n";
         std::cerr << "ERROR: "
