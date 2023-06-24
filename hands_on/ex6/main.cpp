@@ -62,10 +62,10 @@ __kernel void mmul(
 // Exercise 7. Row per work item
 const std::string ROW_PER_WORK_ITEM = R"(
 __kernel void mmul(
-   const int N,
-   __global float* A,
-   __global float* B,
-   __global float* C) {
+    const int N,
+    __global float* A,
+    __global float* B,
+    __global float* C) {
     int i = get_global_id(0);
 
     if (i < N) {
@@ -82,10 +82,10 @@ __kernel void mmul(
 // Exercise 7. Row per work item with private memory
 const std::string ROW_PER_WORK_ITEM_PRIVATE_ROW = R"(
 __kernel void mmul(
-   const int N,
-   __global float* A,
-   __global float* B,
-   __global float* C) {
+    const int N,
+    __global float* A,
+    __global float* B,
+    __global float* C) {
     int i = get_global_id(0);
 
     if (i < N) {
@@ -101,6 +101,42 @@ __kernel void mmul(
                 tmp += row[k] * B[k * N + j];
             }
             C[i * N + j] = tmp;
+        }
+    }
+})";
+
+// Exercise 8. Row per work item with private memory for row and local memory for column.
+const std::string ROW_PER_WORK_ITEM_PRIVATE_ROW_LOCAL_COLUMN = R"(
+__kernel void mmul(
+    const int N,
+    __global float* A,
+    __global float* B,
+    __global float* C,
+    __local float* column) {
+    int i = get_global_id(0);
+    int iloc = get_local_id(0);
+    int nloc = get_local_size(0);
+
+    if (i < N) {
+        // float row[N]; // this doesn't compile on Intel UHD Graphics GPU
+        float row[1024];
+        for (int k = 0; k < N; k++) {
+            row[k] = A[i * N + k];
+        }
+
+        for (int j = 0; j < N; j++) {
+            for (int k=iloc; k < N; k += nloc) {
+                column[k] = B[k * N + j];
+            }
+            barrier(CLK_LOCAL_MEM_FENCE);
+
+            float tmp = 0.0f;
+            for (int k = 0; k < N; k++) {
+                tmp += row[k] * column[k];
+            }
+            C[i * N + j] = tmp;
+
+            barrier(CLK_LOCAL_MEM_FENCE);
         }
     }
 })";
@@ -149,13 +185,13 @@ void multiplyCpuBetterSimple(std::vector<float> &h_A, std::vector<float> &h_B, s
     printf("\n");
 }
 
-void rowPerWorkItemMultiplyCL(const ClContext &clContext,
-                              const std::string &name,
-                              const std::string &kernelCode,
-                              const std::function<cl::EnqueueArgs(cl::CommandQueue &)> &createArgs,
-                              std::vector<float> &h_A,
-                              std::vector<float> &h_B,
-                              std::vector<float> &h_C) {
+void multiplyCL(const ClContext &clContext,
+                const std::string &name,
+                const std::string &kernelCode,
+                const std::function<cl::EnqueueArgs(cl::CommandQueue &)> &createArgs,
+                std::vector<float> &h_A,
+                std::vector<float> &h_B,
+                std::vector<float> &h_C) {
     printf("OpenCL, matrix mul '%s', order %zu,\t",
            name.c_str(),
            N);
@@ -186,6 +222,44 @@ void rowPerWorkItemMultiplyCL(const ClContext &clContext,
     results(N, h_C, run_time);
 }
 
+
+void multiplyCLWithLocalColumn(const ClContext &clContext,
+                               const std::string &name,
+                               const std::function<cl::EnqueueArgs(cl::CommandQueue &)> &createArgs,
+                               std::vector<float> &h_A,
+                               std::vector<float> &h_B,
+                               std::vector<float> &h_C) {
+    printf("OpenCL, matrix mul '%s', order %zu,\t",
+           name.c_str(),
+           N);
+
+    auto queue = clContext.createQueue();
+    auto &context = clContext.getContext();
+
+    cl::Program program(context, ROW_PER_WORK_ITEM_PRIVATE_ROW_LOCAL_COLUMN, true);
+
+    auto d_a = cl::Buffer(context, h_A.begin(), h_A.end(), true);
+    auto d_b = cl::Buffer(context, h_B.begin(), h_B.end(), true);
+    auto d_c = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(float) * size);
+
+    auto naive_mmul = cl::KernelFunctor<int, cl::Buffer &, cl::Buffer &, cl::Buffer &, cl::LocalSpaceArg>(program,
+                                                                                                          "mmul");
+
+    zero_mat(N, h_C);
+    util::Timer timer;
+    double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
+
+    naive_mmul(createArgs(queue), N, d_a, d_b, d_c, cl::Local(sizeof(float) * N));
+
+    queue.finish();
+
+    double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+
+    cl::copy(queue, d_c, h_C.begin(), h_C.end());
+
+    results(N, h_C, run_time);
+}
+
 void runForDevice(size_t deviceIndex,
                   std::vector<float> &h_A,
                   std::vector<float> &h_B,
@@ -193,26 +267,35 @@ void runForDevice(size_t deviceIndex,
     const ClContext clContext(deviceIndex);
 
     printf("===== Device '%s' start =====\n", clContext.getName());
-    rowPerWorkItemMultiplyCL(clContext, "C(i,j) per work item", CELL_PER_WORK_ITEM, [](auto queue) {
+    multiplyCL(clContext, "C(i,j) per work item", CELL_PER_WORK_ITEM, [](auto queue) {
         return cl::EnqueueArgs(queue, cl::NDRange(N, N));
     }, h_A, h_B, h_C);
-    rowPerWorkItemMultiplyCL(clContext, "C row per work item, 16 unites", ROW_PER_WORK_ITEM, [](auto queue) {
+    multiplyCL(clContext, "C row per work item, 16 units", ROW_PER_WORK_ITEM, [](auto queue) {
         return cl::EnqueueArgs(queue, cl::NDRange(N), cl::NDRange(N / 16));
     }, h_A, h_B, h_C);
-    rowPerWorkItemMultiplyCL(clContext, "C row per work item, any units", ROW_PER_WORK_ITEM, [](auto queue) {
+    multiplyCL(clContext, "C row per work item, any units", ROW_PER_WORK_ITEM, [](auto queue) {
         return cl::EnqueueArgs(queue, cl::NDRange(N));
     }, h_A, h_B, h_C);
     if (deviceIndex != 0) { // Intel CPU gives CL_INVALID_WORK_GROUP_SIZE
-        rowPerWorkItemMultiplyCL(clContext, "C row per work item private memory, 16 units",
-                                 ROW_PER_WORK_ITEM_PRIVATE_ROW,
-                                 [](auto queue) {
-                                     return cl::EnqueueArgs(queue, cl::NDRange(N), cl::NDRange(N / 16));
-                                 }, h_A, h_B, h_C);
+        multiplyCL(clContext, "C row per work item private memory, 16 units",
+                   ROW_PER_WORK_ITEM_PRIVATE_ROW,
+                   [](auto queue) {
+                       return cl::EnqueueArgs(queue, cl::NDRange(N), cl::NDRange(N / 16));
+                   }, h_A, h_B, h_C);
     }
-    rowPerWorkItemMultiplyCL(clContext, "C row per work item private memory, any units", ROW_PER_WORK_ITEM_PRIVATE_ROW,
-                             [](auto queue) {
-                                 return cl::EnqueueArgs(queue, cl::NDRange(N));
-                             }, h_A, h_B, h_C);
+    multiplyCL(clContext, "C row per work item private memory, any units", ROW_PER_WORK_ITEM_PRIVATE_ROW,
+               [](auto queue) {
+                   return cl::EnqueueArgs(queue, cl::NDRange(N));
+               }, h_A, h_B, h_C);
+
+    if (deviceIndex != 0) { // Intel CPU gives CL_INVALID_WORK_GROUP_SIZE
+        multiplyCLWithLocalColumn(clContext, "C row per work item, 16 units", [](auto queue) {
+            return cl::EnqueueArgs(queue, cl::NDRange(N), cl::NDRange(N / 16));
+        }, h_A, h_B, h_C);
+    }
+    multiplyCLWithLocalColumn(clContext, "C row per work item, any units", [](auto queue) {
+        return cl::EnqueueArgs(queue, cl::NDRange(N));
+    }, h_A, h_B, h_C);
     printf("===== Device '%s' done =====\n\n", clContext.getName());
 }
 
