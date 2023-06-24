@@ -26,6 +26,7 @@
 #define CL_HPP_TARGET_OPENCL_VERSION 120
 
 #include "matrix_lib.hpp"
+#include "block_mmul.hpp"
 #include "../../common/cpp/util.hpp"
 #include "../../common/cpp/device_picker.hpp"
 #include "../../common/cpp/cl.hpp"
@@ -201,13 +202,13 @@ void multiplyCL(const ClContext &clContext,
     auto d_b = cl::Buffer(context, h_B.begin(), h_B.end(), true);
     auto d_c = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(float) * size);
 
-    auto naive_mmul = cl::KernelFunctor<cl::Buffer &, cl::Buffer &, cl::Buffer &>(program, "mmul");
+    auto mmul = cl::KernelFunctor<cl::Buffer &, cl::Buffer &, cl::Buffer &>(program, "mmul");
 
     zero_mat(N, h_C);
     util::Timer timer;
     double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
 
-    naive_mmul(createArgs(queue), d_a, d_b, d_c);
+    mmul(createArgs(queue), d_a, d_b, d_c);
 
     queue.finish();
 
@@ -217,7 +218,6 @@ void multiplyCL(const ClContext &clContext,
 
     results(N, h_C, run_time);
 }
-
 
 void multiplyCLWithLocalColumn(const ClContext &clContext,
                                const std::string &name,
@@ -241,13 +241,76 @@ void multiplyCLWithLocalColumn(const ClContext &clContext,
     auto d_b = cl::Buffer(context, h_B.begin(), h_B.end(), true);
     auto d_c = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(float) * size);
 
-    auto naive_mmul = cl::KernelFunctor<cl::Buffer &, cl::Buffer &, cl::Buffer &, cl::LocalSpaceArg>(program, "mmul");
+    auto mmul = cl::KernelFunctor<cl::Buffer &, cl::Buffer &, cl::Buffer &, cl::LocalSpaceArg>(program, "mmul");
 
     zero_mat(N, h_C);
     util::Timer timer;
     double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
 
-    naive_mmul(createArgs(queue), d_a, d_b, d_c, cl::Local(sizeof(float) * N));
+    cl::LocalSpaceArg column_arg = cl::Local(sizeof(float) * N);
+    mmul(createArgs(queue), d_a, d_b, d_c, column_arg);
+
+    queue.finish();
+
+    double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+
+    cl::copy(queue, d_c, h_C.begin(), h_C.end());
+
+    results(N, h_C, run_time);
+}
+
+void multiplyCLFastWithBLocks(const ClContext &clContext,
+                              const std::string &name,
+                              size_t block_size,
+                              std::vector<float> &h_A,
+                              std::vector<float> &h_B,
+                              std::vector<float> &h_C) {
+    printf("OpenCL, matrix mul '%s', order %zu,\t",
+           name.c_str(),
+           N);
+
+    auto queue = clContext.createQueue();
+    auto &context = clContext.getContext();
+
+    // It turns out that the compiler generates much better code if we hardwire constants.
+    std::string kernel = "#define N " + std::to_string(N) + "\n" +
+                         "#define blksz " + std::to_string(block_size) + "\n" +
+                         BLOCK_MULTIPLICATION;
+    cl::Program program(context, kernel);
+    try {
+        program.build();
+    }
+    catch (...) {
+        cl_int buildErr = CL_SUCCESS;
+        auto buildInfo = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(&buildErr);
+        for (auto &pair: buildInfo) {
+            std::cerr << pair.second << std::endl << std::endl;
+        }
+    }
+
+    auto d_a = cl::Buffer(context, h_A.begin(), h_A.end(), true);
+    auto d_b = cl::Buffer(context, h_B.begin(), h_B.end(), true);
+    auto d_c = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(float) * size);
+
+    auto mmul = cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer, cl::LocalSpaceArg, cl::LocalSpaceArg>(
+            program, "mmul");
+
+    zero_mat(N, h_C);
+    util::Timer timer;
+    double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
+
+    cl::LocalSpaceArg A_block = cl::Local(sizeof(float) * block_size * block_size);
+    cl::LocalSpaceArg B_block = cl::Local(sizeof(float) * block_size * block_size);
+    mmul(
+            cl::EnqueueArgs(
+                    queue,
+                    cl::NDRange(N, N),
+                    cl::NDRange(block_size, block_size)),
+            d_a,
+            d_b,
+            d_c,
+            A_block,
+            B_block);
 
     queue.finish();
 
@@ -294,6 +357,10 @@ void runForDevice(size_t deviceIndex,
     multiplyCLWithLocalColumn(clContext, "C row per work item with local column, any units", [](auto queue) {
         return cl::EnqueueArgs(queue, cl::NDRange(N));
     }, h_A, h_B, h_C);
+
+    if (deviceIndex != 0) { // Intel CPU gives CL_INVALID_WORK_GROUP_SIZE.
+        multiplyCLFastWithBLocks(clContext, "Block fast, block size 16", 16, h_A, h_B, h_C);
+    }
     printf("===== Device '%s' done =====\n\n", clContext.getName());
 }
 
