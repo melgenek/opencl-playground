@@ -42,7 +42,6 @@ const size_t size = N * N;    // Number of elements in each matrix
 // Exercise 6. Simple
 const std::string CELL_PER_WORK_ITEM = R"(
 __kernel void mmul(
-   const int N,
    __global float* A,
    __global float* B,
    __global float* C) {
@@ -52,7 +51,6 @@ __kernel void mmul(
     if (i < N && j <N) {
         float tmp = 0.0f;
         for (int k = 0; k < N; k++) {
-            /* C(i,j) = sum(over k) A(i,k) * B(k,j) */
             tmp += A[i * N + k] * B[k * N + j];
         }
         C[i * N + j] = tmp;
@@ -62,7 +60,6 @@ __kernel void mmul(
 // Exercise 7. Row per work item
 const std::string ROW_PER_WORK_ITEM = R"(
 __kernel void mmul(
-    const int N,
     __global float* A,
     __global float* B,
     __global float* C) {
@@ -82,15 +79,13 @@ __kernel void mmul(
 // Exercise 7. Row per work item with private memory
 const std::string ROW_PER_WORK_ITEM_PRIVATE_ROW = R"(
 __kernel void mmul(
-    const int N,
     __global float* A,
     __global float* B,
     __global float* C) {
     int i = get_global_id(0);
 
     if (i < N) {
-        // float row[N]; // this doesn't compile on Intel UHD Graphics GPU
-        float row[1024];
+        float row[N];
         for (int k = 0; k < N; k++) {
             row[k] = A[i * N + k];
         }
@@ -108,7 +103,6 @@ __kernel void mmul(
 // Exercise 8. Row per work item with private memory for row and local memory for column.
 const std::string ROW_PER_WORK_ITEM_PRIVATE_ROW_LOCAL_COLUMN = R"(
 __kernel void mmul(
-    const int N,
     __global float* A,
     __global float* B,
     __global float* C,
@@ -118,8 +112,7 @@ __kernel void mmul(
     int nloc = get_local_size(0);
 
     if (i < N) {
-        // float row[N]; // this doesn't compile on Intel UHD Graphics GPU
-        float row[1024];
+        float row[N];
         for (int k = 0; k < N; k++) {
             row[k] = A[i * N + k];
         }
@@ -199,19 +192,22 @@ void multiplyCL(const ClContext &clContext,
     auto queue = clContext.createQueue();
     auto &context = clContext.getContext();
 
-    cl::Program program(context, kernelCode, true);
+    // N is defined instead of being passed as a parameter.
+    // GPU kernels do not allow variable length arrays.
+    std::string kernel = "#define N " + std::to_string(N) + "\n" + kernelCode;
+    cl::Program program(context, kernel, true);
 
     auto d_a = cl::Buffer(context, h_A.begin(), h_A.end(), true);
     auto d_b = cl::Buffer(context, h_B.begin(), h_B.end(), true);
     auto d_c = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(float) * size);
 
-    auto naive_mmul = cl::KernelFunctor<int, cl::Buffer &, cl::Buffer &, cl::Buffer &>(program, "mmul");
+    auto naive_mmul = cl::KernelFunctor<cl::Buffer &, cl::Buffer &, cl::Buffer &>(program, "mmul");
 
     zero_mat(N, h_C);
     util::Timer timer;
     double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
 
-    naive_mmul(createArgs(queue), N, d_a, d_b, d_c);
+    naive_mmul(createArgs(queue), d_a, d_b, d_c);
 
     queue.finish();
 
@@ -236,20 +232,22 @@ void multiplyCLWithLocalColumn(const ClContext &clContext,
     auto queue = clContext.createQueue();
     auto &context = clContext.getContext();
 
-    cl::Program program(context, ROW_PER_WORK_ITEM_PRIVATE_ROW_LOCAL_COLUMN, true);
+    // N is defined instead of being passed as a parameter.
+    // GPU kernels do not allow variable length arrays.
+    std::string kernel = "#define N " + std::to_string(N) + "\n" + ROW_PER_WORK_ITEM_PRIVATE_ROW_LOCAL_COLUMN;
+    cl::Program program(context, kernel, true);
 
     auto d_a = cl::Buffer(context, h_A.begin(), h_A.end(), true);
     auto d_b = cl::Buffer(context, h_B.begin(), h_B.end(), true);
     auto d_c = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(float) * size);
 
-    auto naive_mmul = cl::KernelFunctor<int, cl::Buffer &, cl::Buffer &, cl::Buffer &, cl::LocalSpaceArg>(program,
-                                                                                                          "mmul");
+    auto naive_mmul = cl::KernelFunctor<cl::Buffer &, cl::Buffer &, cl::Buffer &, cl::LocalSpaceArg>(program, "mmul");
 
     zero_mat(N, h_C);
     util::Timer timer;
     double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
 
-    naive_mmul(createArgs(queue), N, d_a, d_b, d_c, cl::Local(sizeof(float) * N));
+    naive_mmul(createArgs(queue), d_a, d_b, d_c, cl::Local(sizeof(float) * N));
 
     queue.finish();
 
@@ -276,7 +274,7 @@ void runForDevice(size_t deviceIndex,
     multiplyCL(clContext, "C row per work item, any units", ROW_PER_WORK_ITEM, [](auto queue) {
         return cl::EnqueueArgs(queue, cl::NDRange(N));
     }, h_A, h_B, h_C);
-    if (deviceIndex != 0) { // Intel CPU gives CL_INVALID_WORK_GROUP_SIZE
+    if (deviceIndex != 0) { // Intel CPU gives CL_INVALID_WORK_GROUP_SIZE. For this kernel the work-group size is 1.
         multiplyCL(clContext, "C row per work item private memory, 16 units",
                    ROW_PER_WORK_ITEM_PRIVATE_ROW,
                    [](auto queue) {
@@ -288,12 +286,12 @@ void runForDevice(size_t deviceIndex,
                    return cl::EnqueueArgs(queue, cl::NDRange(N));
                }, h_A, h_B, h_C);
 
-    if (deviceIndex != 0) { // Intel CPU gives CL_INVALID_WORK_GROUP_SIZE
-        multiplyCLWithLocalColumn(clContext, "C row per work item, 16 units", [](auto queue) {
+    if (deviceIndex != 0) { // Intel CPU gives CL_INVALID_WORK_GROUP_SIZE. For this kernel the work-group size is 1.
+        multiplyCLWithLocalColumn(clContext, "C row per work item with local column, 16 units", [](auto queue) {
             return cl::EnqueueArgs(queue, cl::NDRange(N), cl::NDRange(N / 16));
         }, h_A, h_B, h_C);
     }
-    multiplyCLWithLocalColumn(clContext, "C row per work item, any units", [](auto queue) {
+    multiplyCLWithLocalColumn(clContext, "C row per work item with local column, any units", [](auto queue) {
         return cl::EnqueueArgs(queue, cl::NDRange(N));
     }, h_A, h_B, h_C);
     printf("===== Device '%s' done =====\n\n", clContext.getName());
