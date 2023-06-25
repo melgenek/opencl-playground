@@ -53,6 +53,38 @@ __kernel void pi(
     }
 })";
 
+// Exercise 10. Run on multiple devices at once.
+const std::string SIMPLE_PI_MULTI_DEVICE = R"(
+__kernel void pi(
+    const unsigned long num_steps,
+    const unsigned long offset,
+    const float step,
+    __local float* worker_group_results,
+    __global float* all_results) {
+    int local_id = get_local_id(0);
+    int global_size = get_global_size(0);
+    int group_id = get_group_id(0);
+    int global_id = get_global_id(0);
+
+    int steps_per_work_item = num_steps / global_size;
+
+    float sum = 0.0f;
+    for(int i = offset + global_id * steps_per_work_item; i < offset + (global_id+1)*steps_per_work_item; i++) {
+        float x = (i - 0.5f) * step;
+        sum += 4.0f / (1.0f + x * x);
+    }
+    worker_group_results[local_id] = sum;
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    if (local_id == 0) {
+        float group_sum = 0.0f;
+        for (size_t i = 0; i < get_local_size(0); i++) {
+            group_sum += worker_group_results[i];
+        }
+        all_results[group_id] = group_sum*step;
+    }
+})";
+
 // Appendix A exercise. float4
 const std::string FLOAT4_PI = R"(
 __kernel void pi(
@@ -188,6 +220,69 @@ void find_pi_cl(const std::string &kernelCode, const std::string &name_info) {
     }
 }
 
+struct MulContext {
+    cl::CommandQueue queue;
+    std::vector<float> h_worker_group_sums;
+    cl::Buffer d_worker_group_sums;
+};
+
+void find_pi_cl_multiple_devices() {
+    const auto devices = getDeviceList();
+    const cl::Context context(devices);
+    cl::Program program(context, SIMPLE_PI_MULTI_DEVICE);
+    try {
+        program.build();
+    }
+    catch (cl::Error &err) {
+        cl_int buildErr = CL_SUCCESS;
+        auto buildInfo = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(&buildErr);
+        for (auto &pair: buildInfo) {
+            std::cerr << pair.second << std::endl << std::endl;
+        }
+        throw err;
+    }
+    auto pi_kernel = cl::KernelFunctor<unsigned long, unsigned long, float, cl::LocalSpaceArg, cl::Buffer>(program,
+                                                                                                           "pi");
+
+    util::Timer timer;
+    std::vector<MulContext> mul_contexts;
+    size_t offset = 0;
+    for (const auto &device: getDeviceList()) {
+        size_t work_group_size = pi_kernel.getKernel().getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+        uint32_t compute_units = device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
+        size_t global_size = work_group_size * compute_units;
+        MulContext ctx{.queue = cl::CommandQueue(context, device),
+                .h_worker_group_sums = std::vector<float>(compute_units),
+                .d_worker_group_sums = cl::Buffer(context, CL_MEM_WRITE_ONLY,
+                                                  sizeof(float) * compute_units)};
+        const auto steps_for_device = num_steps / 3;
+        pi_kernel(
+                cl::EnqueueArgs(
+                        ctx.queue,
+                        cl::NDRange(global_size),
+                        cl::NDRange(work_group_size)),
+                steps_for_device,
+                offset,
+                static_cast<float>(step),
+                cl::Local(sizeof(float) * work_group_size),
+                ctx.d_worker_group_sums);
+        offset += steps_for_device;
+
+        mul_contexts.push_back(std::move(ctx));
+    }
+
+    float pi = 0.0;
+    for (auto &ctx: mul_contexts) {
+        ctx.queue.finish();
+        cl::copy(ctx.queue, ctx.d_worker_group_sums, ctx.h_worker_group_sums.begin(), ctx.h_worker_group_sums.end());
+        for (float v: ctx.h_worker_group_sums) {
+            pi += v;
+        }
+    }
+    double run_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
+    printf("pi with %ld steps is %lf in %lf seconds. Devices: all\n", num_steps, pi, run_time);
+}
+
 int main() {
     find_pi_sequentially();
 
@@ -195,6 +290,7 @@ int main() {
         find_pi_cl(SIMPLE_PI, "simple");
         find_pi_cl(FLOAT4_PI, "float4");
         find_pi_cl(FLOAT8_PI, "float8");
+        find_pi_cl_multiple_devices();
     } catch (cl::Error &err) {
         std::cout << "Exception\n";
         std::cerr << "ERROR: "

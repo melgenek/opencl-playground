@@ -5,6 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(OpenCL REQUIRED)
 
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-march=native -ffast-math -funroll-loops)
+endif ()
+
 add_executable(hands_on_ex1_c hands_on/ex1/main.c common/err_code.h)
 target_link_libraries(hands_on_ex1_c OpenCL::OpenCL)
 
