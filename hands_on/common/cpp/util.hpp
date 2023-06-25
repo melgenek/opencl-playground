@@ -5,17 +5,17 @@
 #include <windows.h>
 typedef unsigned __int64 uint64_t;
 #elif defined(__APPLE__) || defined(__MACOSX)
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/sys/time.h"
+#include "sys/time.h"
 #else
 #include <stdint.h>
 #include <unistd.h>
 #endif
 
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/iostream"
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/fstream"
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/string"
+#include "iostream"
+#include "fstream"
+#include "string"
 
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/cstdlib"
+#include "cstdlib"
 
 namespace util {
 

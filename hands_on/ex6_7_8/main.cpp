@@ -18,8 +18,8 @@
 
 #include "matrix_lib.hpp"
 #include "block_mmul.hpp"
-#include "../../common/cpp/util.hpp"
-#include "../../common/cpp/device_picker.hpp"
+#include "../common/cpp/util.hpp"
+#include "../common/cpp/device_picker.hpp"
 
 #include <cstdio>
 #include <cstdlib>

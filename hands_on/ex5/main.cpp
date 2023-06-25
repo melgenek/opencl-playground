@@ -13,9 +13,9 @@
 #define CL_HPP_TARGET_OPENCL_VERSION 120
 
 
-#include "../../common/cpp/cl.hpp"
-#include "../../common/cpp/util.hpp"
-#include "../../common/err_code.h"
+#include "../common/cpp/cl.hpp"
+#include "../common/cpp/util.hpp"
+#include "../common/err_code.h"
 
 #include <vector>
 #include <cstdio>

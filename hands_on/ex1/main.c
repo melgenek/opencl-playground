@@ -22,7 +22,7 @@
 #include <CL/cl.h>
 #endif
 
-#include "../../common/err_code.h"
+#include "../common/err_code.h"
 
 int main(void) {
     cl_int err;

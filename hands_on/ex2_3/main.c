@@ -21,7 +21,7 @@
 #include <CL/cl.h>
 #endif
 
-#include "../../common/err_code.h"
+#include "../common/err_code.h"
 
 //pick up device type from compiler command line or from
 //the default type

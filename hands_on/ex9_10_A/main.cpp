@@ -13,8 +13,8 @@ is great since it gives us an easy way to check the answer.
 #define CL_HPP_MINIMUM_OPENCL_VERSION 120
 #define CL_HPP_TARGET_OPENCL_VERSION 120
 
-#include "../../common/cpp/util.hpp"
-#include "../../common/cpp/device_picker.hpp"
+#include "../common/cpp/util.hpp"
+#include "../common/cpp/device_picker.hpp"
 
 #include <cstdio>
 

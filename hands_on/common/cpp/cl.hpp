@@ -563,12 +563,12 @@
 #define CL_CALLBACK
 #endif //CL_CALLBACK
 
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/utility"
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/limits"
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/iterator"
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/mutex"
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/cstring"
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/functional"
+#include "utility"
+#include "limits"
+#include "iterator"
+#include "mutex"
+#include "cstring"
+#include "functional"
 
 
 // Define a size_type to represent a correctly resolved size_t
@@ -588,7 +588,7 @@ namespace cl {
 #endif // #if defined(CL_HPP_ENABLE_EXCEPTIONS)
 
 #if !defined(CL_HPP_NO_STD_VECTOR)
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/vector"
+#include "vector"
 namespace cl {
     template < class T, class Alloc = std::allocator<T> >
     using vector = std::vector<T, Alloc>;
@@ -596,7 +596,7 @@ namespace cl {
 #endif // #if !defined(CL_HPP_NO_STD_VECTOR)
 
 #if !defined(CL_HPP_NO_STD_STRING)
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/string"
+#include "string"
 namespace cl {
     using string = std::string;
 } // namespace cl
@@ -615,7 +615,7 @@ namespace cl {
 #endif
 #endif // #if CL_HPP_TARGET_OPENCL_VERSION >= 200
 #if !defined(CL_HPP_NO_STD_ARRAY)
-#include "../../../../../../Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk/usr/include/c++/v1/array"
+#include "array"
 namespace cl {
     template < class T, size_type N >
     using array = std::array<T, N>;

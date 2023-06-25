@@ -10,15 +10,14 @@
 #define CL_HPP_MINIMUM_OPENCL_VERSION 120
 #define CL_HPP_TARGET_OPENCL_VERSION 120
 
-#include "../../common/cpp/cl.hpp"
-#include "../../common/err_code.h"
+#include "../common/cpp/cl.hpp"
+#include "../common/err_code.h"
 
 #include <iostream>
 #include <vector>
 
 
 int main() {
-
     try {
         // Discover number of platforms
         std::vector<cl::Platform> platforms;
