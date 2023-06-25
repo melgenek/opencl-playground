@@ -29,5 +29,9 @@ target_link_libraries(hands_on_ex5_c OpenCL::OpenCL)
 add_executable(hands_on_ex5 hands_on/ex5/main.cpp common/cpp/cl.hpp common/err_code.h common/cpp/util.hpp)
 target_link_libraries(hands_on_ex5 OpenCL::OpenCL)
 
-add_executable(hands_on_ex6 hands_on/ex6_7_8/main.cpp common/cpp/cl.hpp common/err_code.h common/cpp/util.hpp common/cpp/device_picker.hpp hands_on/ex6_7_8/matrix_lib.cpp hands_on/ex6_7_8/block_mmul.hpp)
-target_link_libraries(hands_on_ex6 OpenCL::OpenCL)
+add_executable(hands_on_ex6_7_8 hands_on/ex6_7_8/main.cpp common/cpp/cl.hpp common/err_code.h common/cpp/util.hpp common/cpp/device_picker.hpp hands_on/ex6_7_8/matrix_lib.cpp hands_on/ex6_7_8/block_mmul.hpp)
+target_link_libraries(hands_on_ex6_7_8 OpenCL::OpenCL)
+
+add_executable(hands_on_ex9 hands_on/ex9/main.cpp common/cpp/cl.hpp common/err_code.h common/cpp/util.hpp common/cpp/device_picker.hpp)
+target_link_libraries(hands_on_ex9 OpenCL::OpenCL)
+

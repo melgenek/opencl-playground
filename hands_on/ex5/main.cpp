@@ -5,11 +5,6 @@
 // Purpose:    Elementwise addition of two vectors (c = a + b)
 //
 //                   c = a + b
-//
-// HISTORY:    Written by Tim Mattson, June 2011
-//             Ported to C++ Wrapper API by Benedict Gaster, September 2011
-//             Updated to C++ Wrapper API v1.2 by Tom Deakin and Simon McIntosh-Smith, October 2012
-//             Updated to C++ Wrapper v1.2.6 by Tom Deakin, August 2013
 //             
 //------------------------------------------------------------------------------
 

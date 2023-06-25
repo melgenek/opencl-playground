@@ -4,8 +4,6 @@
  * Script to print out some information about the OpenCL devices
  * and platforms available on your system
  *
- * History: C++ version written by Tom Deakin, 2012
- *          Updated by Tom Deakin, August 2013
 */
 
 #define CL_HPP_ENABLE_EXCEPTIONS
@@ -24,7 +22,7 @@ int main() {
         // Discover number of platforms
         std::vector<cl::Platform> platforms;
         cl::Platform::get(&platforms);
-        std::cout << "\nNumber of OpenCL plaforms: " << platforms.size() << std::endl;
+        std::cout << "\nNumber of OpenCL platforms: " << platforms.size() << std::endl;
 
         // Investigate each platform
         std::cout << "\n-------------------------" << std::endl;
@@ -56,6 +54,9 @@ int main() {
 
                 device.getInfo(CL_DEVICE_OPENCL_C_VERSION, &s);
                 std::cout << "\t\tVersion: " << s << std::endl;
+
+                device.getInfo(CL_DEVICE_EXTENSIONS, &s);
+                std::cout << "\tExtensions: " << s << std::endl;
 
                 int i;
                 device.getInfo(CL_DEVICE_MAX_COMPUTE_UNITS, &i);

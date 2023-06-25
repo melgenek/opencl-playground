@@ -10,15 +10,6 @@
 //           A and B are set to constant matrices so we
 //           can make a quick test of the multiplication.
 //
-//  USAGE:   The matrices are constant matrices, square and the order is
-//           set as a constant, ORDER (see mult.h).
-//
-//  HISTORY: Written by Tim Mattson, August 2010
-//           Modified by Simon McIntosh-Smith, September 2011
-//           Modified by Tom Deakin and Simon McIntosh-Smith, October 2012
-//           Updated to C++ Wrapper v1.2.6 by Tom Deakin, August 2013
-//           Modified to assume square matrices by Simon McIntosh-Smith, Sep 2014
-//
 //------------------------------------------------------------------------------
 
 #define CL_HPP_ENABLE_EXCEPTIONS
@@ -280,12 +271,13 @@ void multiplyCLFastWithBLocks(const ClContext &clContext,
     try {
         program.build();
     }
-    catch (...) {
+    catch (cl::Error &err) {
         cl_int buildErr = CL_SUCCESS;
         auto buildInfo = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(&buildErr);
         for (auto &pair: buildInfo) {
             std::cerr << pair.second << std::endl << std::endl;
         }
+        throw err;
     }
 
     auto d_a = cl::Buffer(context, h_A.begin(), h_A.end(), true);
