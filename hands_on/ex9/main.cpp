@@ -15,8 +15,6 @@ is great since it gives us an easy way to check the answer.
 
 #include "../../common/cpp/util.hpp"
 #include "../../common/cpp/device_picker.hpp"
-#include "../../common/cpp/cl.hpp"
-#include "../../common/err_code.h"
 
 #include <cstdio>
 

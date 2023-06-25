@@ -15,11 +15,10 @@
 #include "../../common/cpp/util.hpp"
 #include "../../common/err_code.h"
 
-#include <vector>
 #include <cstdio>
 #include <cstdlib>
-
 #include <iostream>
+#include <vector>
 
 // pick up device type from compiler command line or from the default type
 #ifndef DEVICE

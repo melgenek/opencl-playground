@@ -11,10 +11,11 @@
 #define CL_HPP_TARGET_OPENCL_VERSION 120
 
 #include "../../common/cpp/cl.hpp"
+#include "../../common/err_code.h"
+
 #include <iostream>
 #include <vector>
 
-#include "../../common/err_code.h"
 
 int main() {
 
