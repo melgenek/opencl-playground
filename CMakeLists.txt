@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.7)
 project(opencl_playground VERSION 0.0.1 LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 find_package(OpenCL REQUIRED)
+find_package(CLBlast REQUIRED)
+find_package(CLBlast)
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-march=native -ffast-math -funroll-loops)
@@ -35,6 +37,7 @@ target_link_libraries(hands_on_ex5 OpenCL::OpenCL)
 
 add_executable(hands_on_ex6_7_8 hands_on/ex6_7_8/main.cpp hands_on/common/cpp/cl.hpp hands_on/common/err_code.h hands_on/common/cpp/util.hpp hands_on/common/cpp/device_picker.hpp hands_on/ex6_7_8/matrix_lib.cpp hands_on/ex6_7_8/block_mmul.hpp)
 target_link_libraries(hands_on_ex6_7_8 OpenCL::OpenCL)
+target_link_libraries(hands_on_ex6_7_8 clblast)
 
 add_executable(hands_on_ex9_10_A hands_on/ex9_10_A/main.cpp hands_on/common/cpp/cl.hpp hands_on/common/err_code.h hands_on/common/cpp/util.hpp hands_on/common/cpp/device_picker.hpp)
 target_link_libraries(hands_on_ex9_10_A OpenCL::OpenCL)

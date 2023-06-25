@@ -21,13 +21,15 @@
 #include "../common/cpp/util.hpp"
 #include "../common/cpp/device_picker.hpp"
 
+#include <clblast.h>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <vector>
 
-const size_t N = 1024;        // A[N][N], B[N][N], C[N][N]
+const size_t N = 1920;        // A[N][N], B[N][N], C[N][N]
 const size_t size = N * N;    // Number of elements in each matrix
+const size_t ITERATIONS = 5;
 
 // Exercise 6. Simple
 const std::string CELL_PER_WORK_ITEM = R"(
@@ -214,10 +216,6 @@ void multiplyCLWithLocalColumn(const ClContext &clContext,
                                std::vector<float> &h_A,
                                std::vector<float> &h_B,
                                std::vector<float> &h_C) {
-    printf("OpenCL, matrix mul '%s', order %zu,\t",
-           name.c_str(),
-           N);
-
     auto queue = clContext.createQueue();
     auto &context = clContext.getContext();
 
@@ -232,20 +230,22 @@ void multiplyCLWithLocalColumn(const ClContext &clContext,
 
     auto mmul = cl::KernelFunctor<cl::Buffer &, cl::Buffer &, cl::Buffer &, cl::LocalSpaceArg>(program, "mmul");
 
-    zero_mat(N, h_C);
-    util::Timer timer;
-    double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
+    for (int i = 0; i < ITERATIONS; i++) {
+        zero_mat(N, h_C);
+        util::Timer timer;
+        double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
 
-    cl::LocalSpaceArg column_arg = cl::Local(sizeof(float) * N);
-    mmul(createArgs(queue), d_a, d_b, d_c, column_arg);
+        cl::LocalSpaceArg column_arg = cl::Local(sizeof(float) * N);
+        mmul(createArgs(queue), d_a, d_b, d_c, column_arg);
 
-    queue.finish();
+        queue.finish();
 
-    double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+        double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+        cl::copy(queue, d_c, h_C.begin(), h_C.end());
 
-    cl::copy(queue, d_c, h_C.begin(), h_C.end());
-
-    results(N, h_C, run_time);
+        printf("OpenCL, matrix mul '%s', order %zu,\t", name.c_str(), N);
+        results(N, h_C, run_time);
+    }
 }
 
 void multiplyCLFastWithBLocks(const ClContext &clContext,
@@ -254,10 +254,6 @@ void multiplyCLFastWithBLocks(const ClContext &clContext,
                               std::vector<float> &h_A,
                               std::vector<float> &h_B,
                               std::vector<float> &h_C) {
-    printf("OpenCL, matrix mul '%s', order %zu,\t",
-           name.c_str(),
-           N);
-
     auto queue = clContext.createQueue();
     auto &context = clContext.getContext();
 
@@ -285,30 +281,77 @@ void multiplyCLFastWithBLocks(const ClContext &clContext,
     auto mmul = cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer, cl::LocalSpaceArg, cl::LocalSpaceArg>(
             program, "mmul");
 
-    zero_mat(N, h_C);
-    util::Timer timer;
-    double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
+    for (int i = 0; i < ITERATIONS; i++) {
+        zero_mat(N, h_C);
+        util::Timer timer;
+        double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
 
-    cl::LocalSpaceArg A_block = cl::Local(sizeof(float) * block_size * block_size);
-    cl::LocalSpaceArg B_block = cl::Local(sizeof(float) * block_size * block_size);
-    mmul(
-            cl::EnqueueArgs(
-                    queue,
-                    cl::NDRange(N, N),
-                    cl::NDRange(block_size, block_size)),
-            d_a,
-            d_b,
-            d_c,
-            A_block,
-            B_block);
+        cl::LocalSpaceArg A_block = cl::Local(sizeof(float) * block_size * block_size);
+        cl::LocalSpaceArg B_block = cl::Local(sizeof(float) * block_size * block_size);
+        mmul(
+                cl::EnqueueArgs(
+                        queue,
+                        cl::NDRange(N, N),
+                        cl::NDRange(block_size, block_size)),
+                d_a,
+                d_b,
+                d_c,
+                A_block,
+                B_block);
 
-    queue.finish();
+        queue.finish();
 
-    double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+        double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+        cl::copy(queue, d_c, h_C.begin(), h_C.end());
 
-    cl::copy(queue, d_c, h_C.begin(), h_C.end());
+        printf("OpenCL, matrix mul '%s', order %zu,\t", name.c_str(), N);
+        results(N, h_C, run_time);
+    }
+}
 
-    results(N, h_C, run_time);
+void multiplyCLBlast(const ClContext &clContext,
+                     const std::string &name,
+                     std::vector<float> &h_A,
+                     std::vector<float> &h_B,
+                     std::vector<float> &h_C) {
+    auto queue = clContext.createQueue();
+    const auto &context = clContext.getContext();
+
+    auto d_a = cl::Buffer(context, CL_MEM_READ_ONLY, h_A.size() * sizeof(float));
+    auto d_b = cl::Buffer(context, CL_MEM_READ_ONLY, h_B.size() * sizeof(float));
+    auto d_c = cl::Buffer(context, CL_MEM_WRITE_ONLY, h_C.size() * sizeof(float));
+    queue.enqueueWriteBuffer(d_a, CL_TRUE, 0, h_A.size() * sizeof(float), h_A.data());
+    queue.enqueueWriteBuffer(d_b, CL_TRUE, 0, h_B.size() * sizeof(float), h_B.data());
+    queue.enqueueWriteBuffer(d_c, CL_TRUE, 0, h_C.size() * sizeof(float), h_C.data());
+
+    for (int i = 0; i < ITERATIONS; i++) {
+        zero_mat(N, h_C);
+        util::Timer timer;
+        double start_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
+
+        // The type of alpha and beta (float) determine the precision.
+        const float alpha = 1.0f;
+        const float beta = 0.0f;
+        auto status = clblast::Gemm(clblast::Layout::kRowMajor,
+                                    clblast::Transpose::kNo, clblast::Transpose::kNo,
+                                    N, N, N,
+                                    alpha,
+                                    d_a(), 0, N,
+                                    d_b(), 0, N,
+                                    beta,
+                                    d_c(), 0, N,
+                                    &queue());
+        if (status != clblast::StatusCode::kSuccess) {
+            throw std::runtime_error("clblast::Gemm error");
+        }
+        queue.finish();
+
+        double run_time = (static_cast<double>(timer.getTimeMilliseconds()) / 1000.0) - start_time;
+        cl::copy(queue, d_c, h_C.begin(), h_C.end());
+
+        printf("OpenCL, matrix mul '%s', order %zu,\t", name.c_str(), N);
+        results(N, h_C, run_time);
+    }
 }
 
 void runForDevice(size_t deviceIndex,
@@ -351,6 +394,7 @@ void runForDevice(size_t deviceIndex,
     if (deviceIndex != 0) { // Intel CPU gives CL_INVALID_WORK_GROUP_SIZE.
         multiplyCLFastWithBLocks(clContext, "Block fast, block size 16", 16, h_A, h_B, h_C);
     }
+    multiplyCLBlast(clContext, "CLBlast", h_A, h_B, h_C);
     printf("===== Device '%s' done =====\n\n", clContext.getName());
 }
 
