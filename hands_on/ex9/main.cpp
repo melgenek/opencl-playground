@@ -55,6 +55,72 @@ __kernel void pi(
     }
 })";
 
+// Appendix A exercise. float4
+const std::string FLOAT4_PI = R"(
+__kernel void pi(
+    const unsigned long num_steps,
+    const float step,
+    __local float* worker_group_results,
+    __global float* all_results) {
+    int local_id = get_local_id(0);
+    int global_size = get_global_size(0);
+    int group_id = get_group_id(0);
+    int global_id = get_global_id(0);
+
+    int steps_per_work_item = num_steps / global_size;
+
+    float4 sum_vec = {0.0, 0.0, 0.0, 0.0};
+    float4 offset = {0.5f, 1.5f, 2.5f, 3.5f};
+
+    for(int i = global_id * steps_per_work_item; i < (global_id+1)*steps_per_work_item; i+=4) {
+        float4 x = ((float4)i + offset) * step;
+        sum_vec += 4.0f / (1.0f + x * x);
+    }
+    worker_group_results[local_id] = sum_vec.s0 + sum_vec.s1 + sum_vec.s2 + sum_vec.s3;
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    if (local_id == 0) {
+        float group_sum = 0.0f;
+        for (size_t i = 0; i < get_local_size(0); i++) {
+            group_sum += worker_group_results[i];
+        }
+        all_results[group_id] = group_sum*step;
+    }
+})";
+
+// Appendix A exercise. float8
+const std::string FLOAT8_PI = R"(
+__kernel void pi(
+    const unsigned long num_steps,
+    const float step,
+    __local float* worker_group_results,
+    __global float* all_results) {
+    int local_id = get_local_id(0);
+    int global_size = get_global_size(0);
+    int group_id = get_group_id(0);
+    int global_id = get_global_id(0);
+
+    int steps_per_work_item = num_steps / global_size;
+
+    float8 sum_vec = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    float8 offset = {0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f, 6.5f, 7.5f};
+
+    for(int i = global_id * steps_per_work_item; i < (global_id+1)*steps_per_work_item; i+=8) {
+        float8 x = ((float8)i + offset) * step;
+        sum_vec += 4.0f / (1.0f + x * x);
+    }
+    worker_group_results[local_id] = sum_vec.s0 + sum_vec.s1 + sum_vec.s2 + sum_vec.s3 + sum_vec.s4 + sum_vec.s5 + sum_vec.s6 + sum_vec.s7;
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    if (local_id == 0) {
+        float group_sum = 0.0f;
+        for (size_t i = 0; i < get_local_size(0); i++) {
+            group_sum += worker_group_results[i];
+        }
+        all_results[group_id] = group_sum*step;
+    }
+})";
+
 void find_pi_sequentially() {
     util::Timer timer;
     double sum = 0.0;
@@ -69,13 +135,13 @@ void find_pi_sequentially() {
     printf("pi with %ld steps is %lf in %lf seconds\n", num_steps, pi, run_time);
 }
 
-void find_pi_cl() {
+void find_pi_cl(const std::string &kernelCode, const std::string &name_info) {
     for (const auto &device: getDeviceList()) {
         const std::string deviceName = getDeviceName(device);
         const cl::Context context(device);
         cl::CommandQueue queue(context, device);
 
-        cl::Program program(context, SIMPLE_PI);
+        cl::Program program(context, kernelCode);
         try {
             program.build();
         }
@@ -106,7 +172,7 @@ void find_pi_cl() {
                         cl::NDRange(global_size),
                         cl::NDRange(work_group_size)),
                 num_steps,
-                step,
+                static_cast<float>(step),
                 local_mem_size,
                 d_worker_group_sums);
         queue.finish();
@@ -118,8 +184,9 @@ void find_pi_cl() {
         }
 
         double run_time = static_cast<double>(timer.getTimeMilliseconds()) / 1000.0;
-        printf("pi with %ld steps is %lf in %lf seconds. WG size: %zu, CU: %u. Device: %s\n", num_steps, pi, run_time,
-               work_group_size, compute_units, deviceName.c_str());
+        printf("pi with %ld steps is %lf in %lf seconds. %s. WG size: %zu, CU: %u. Device: %s\n", num_steps, pi,
+               run_time,
+               name_info.c_str(), work_group_size, compute_units, deviceName.c_str());
     }
 }
 
@@ -127,7 +194,9 @@ int main() {
     find_pi_sequentially();
 
     try {
-        find_pi_cl();
+        find_pi_cl(SIMPLE_PI, "simple");
+        find_pi_cl(FLOAT4_PI, "float4");
+        find_pi_cl(FLOAT8_PI, "float8");
     } catch (cl::Error &err) {
         std::cout << "Exception\n";
         std::cerr << "ERROR: "
